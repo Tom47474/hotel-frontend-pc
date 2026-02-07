@@ -180,8 +180,8 @@ if ! command -v pm2 >/dev/null 2>&1; then
   npm install -g pm2
 fi
 
-pm2 stop "gpt-app-$ENV" 2>/dev/null || true
-pm2 delete "gpt-app-$ENV" 2>/dev/null || true
+pm2 stop "hotel-frontend-pc-$ENV" 2>/dev/null || true
+pm2 delete "hotel-frontend-pc-$ENV" 2>/dev/null || true
 
 # Next.js standalone 优先
 if [ -d ".next/standalone" ]; then
@@ -198,7 +198,7 @@ if [ -d ".next/standalone" ]; then
   cat > ecosystem.config.js << PM2EOF
 module.exports = {
   apps: [{
-    name: "hotel-frontend-app-$ENV",
+    name: "hotel-frontend-pc-$ENV",
     script: "server.js",
     cwd: "$CLOUD_DEPLOY_PATH/current/.next/standalone",
     env: {
