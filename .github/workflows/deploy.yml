@@ -1,0 +1,300 @@
+# 工作流名称
+name: Build and Deploy
+
+# 触发条件配置
+on:
+  # 当推送到指定分支时触发
+  push:
+    branches: [ test, master ]  # test 分支推送到测试环境，master 分支推送到生产环境
+  # 外部 API 触发（例如：从其他服务调用 GitHub API 触发）
+  repository_dispatch:
+    types: [ deploy-update ]
+  # 手动触发工作流（在 GitHub Actions 页面手动运行）
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'  # 环境描述
+        required: true                          # 必填
+        default: 'test'                        # 默认值
+        type: choice                           # 选择类型
+        options:
+        - test                                 # 测试环境
+        - prod                                 # 生产环境
+
+# 并发控制：同一分支的多个工作流同时运行时，取消旧的，只保留最新的
+concurrency:
+  group: deploy-${{ github.ref }}              # 按分支分组
+  cancel-in-progress: true                     # 取消正在进行的旧工作流
+
+# 全局环境变量
+env:
+  NODE_VERSION: '22'                           # Node.js 版本
+
+# 定义工作流任务
+jobs:
+  # 构建和部署任务
+  build-and-deploy:
+    runs-on: ubuntu-latest                      # 运行在 Ubuntu 最新版本的虚拟机上
+    steps:
+    # 步骤 1: 记录开始时间（用于计算总耗时）
+    - name: Record start time
+      if: always()                             # 无论前面的步骤是否成功都执行
+      run: echo "START_TIME=$(date +%s)" >> $GITHUB_ENV  # 将当前时间戳（秒）保存到环境变量
+
+    # 步骤 2: 根据触发方式确定部署环境
+    - name: Set Environment
+      if: always()
+      run: |
+        # 默认环境设为 test
+        DEPLOY_ENV="test"
+        
+        # 根据不同的触发方式确定环境
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # 如果是手动触发，则直接使用用户输入的环境值
+          DEPLOY_ENV="${{ github.event.inputs.environment }}"
+        elif [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+          # 如果是外部 API 触发，从 payload 中获取环境
+          DEPLOY_ENV="${{ github.event.client_payload.environment }}"
+        elif [[ "${{ github.ref }}" == "refs/heads/test" && "${{ github.event_name }}" == "push" ]]; then
+          # 如果推送到 test 分支，使用测试环境
+          DEPLOY_ENV="test"
+        elif [[ "${{ github.ref }}" == "refs/heads/master" && "${{ github.event_name }}" == "push" ]]; then
+          # 如果推送到 master 分支，使用生产环境
+          DEPLOY_ENV="prod"
+        fi
+        echo "ENVIRONMENT=$DEPLOY_ENV" >> $GITHUB_ENV
+        
+        # 计算要检出的分支引用
+        # 对于手动触发或外部触发，根据环境选择对应的分支
+        if [[ "${{ github.event_name }}" == "repository_dispatch" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "$DEPLOY_ENV" == "prod" ]]; then
+            TARGET_REF="refs/heads/master"     # 生产环境使用 master 分支
+          else
+            TARGET_REF="refs/heads/test"       # 测试环境使用 test 分支
+          fi
+        else
+          # 对于 push 触发，直接使用推送的分支
+          TARGET_REF="${{ github.ref }}"
+        fi
+        echo "TARGET_REF=$TARGET_REF" >> $GITHUB_ENV
+
+    # 步骤 3: 检出代码到工作目录
+    - name: Checkout code
+      uses: actions/checkout@v4                 # 使用 GitHub 官方的 checkout action
+      with:
+        ref: ${{ env.TARGET_REF }}              # 检出指定的分支（根据环境确定）
+
+    # 步骤 4: 设置 Node.js 环境
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4               # 使用 GitHub 官方的 setup-node action
+      with:
+        node-version: ${{ env.NODE_VERSION }}    # 指定 Node.js 版本
+        cache: 'npm'                             # 启用 npm 缓存以加速依赖安装
+
+    # 步骤 5: 安装项目依赖
+    - name: Install dependencies
+      run: npm ci                                # 使用 npm ci 进行干净安装（比 npm install 更快更可靠）
+
+    # # 步骤 6: 运行测试
+    # - name: Run tests
+    #   run: npm test                              # 执行测试脚本（如果测试失败，工作流会停止）
+
+    # 步骤 7: 根据环境设置敏感信息（从 GitHub Secrets 读取）
+    - name: Set Environment Secrets
+      run: |
+        # 根据环境选择对应的 Secrets
+        if [ "${{ env.ENVIRONMENT }}" = "prod" ]; then
+          # 生产环境的配置
+          echo "NEXT_PUBLIC_BASE_URL=${{ secrets.NEXT_PUBLIC_BASE_URL_PROD }}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL_PROD }}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_API_BASE_URL_PORT=${{ secrets.NEXT_PUBLIC_API_BASE_URL_PORT_PROD }}" >> $GITHUB_ENV
+        else
+          # 测试环境的配置
+          echo "NEXT_PUBLIC_BASE_URL=${{ secrets.NEXT_PUBLIC_BASE_URL_TEST }}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL_TEST }}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_API_BASE_URL_PORT=${{ secrets.NEXT_PUBLIC_API_BASE_URL_PORT_TEST }}" >> $GITHUB_ENV
+          fi
+
+
+    # 步骤 9: 构建项目
+    - name: Build project
+      run: |
+        # 根据环境选择对应的构建命令
+        if [ "${{ env.ENVIRONMENT }}" == "test" ]; then
+          npm run build:test                    # 测试环境构建
+        elif [ "${{ env.ENVIRONMENT }}" == "prod" ]; then
+          npm run build:prod                    # 生产环境构建
+        fi
+      env:
+        # 将环境变量传递给构建过程（Next.js 需要这些变量）
+        NEXT_PUBLIC_BASE_URL: ${{ env.NEXT_PUBLIC_BASE_URL }}
+        NEXT_PUBLIC_API_BASE_URL: ${{ env.NEXT_PUBLIC_API_BASE_URL }}
+        NEXT_PUBLIC_API_BASE_URL_PORT: ${{ env.NEXT_PUBLIC_API_BASE_URL_PORT }}
+
+    # 步骤 10: 打包构建产物
+    - name: Package build artifacts
+      run: |
+        # 验证构建产物
+        if [ ! -d ".next" ]; then
+          echo "Error: Build failed - .next directory not found"
+          exit 1
+        fi
+        
+        # 创建部署包（standalone 模式）
+        tar -czf deploy.tar.gz \
+          --exclude='node_modules/.cache' \
+          --exclude='*.map' \
+          .next/standalone \
+          .next/static \
+          public \
+          package.json \
+          node_modules/.bin
+        
+        ls -lh deploy.tar.gz
+
+    # 步骤 11: 配置服务器连接信息
+    - name: Configure Cloud Server
+      run: |
+        if [ "${{ env.ENVIRONMENT }}" = "prod" ]; then
+          echo "CLOUD_HOST=${{ secrets.CLOUD_HOST_PROD }}" >> $GITHUB_ENV
+          echo "CLOUD_USER=${{ secrets.CLOUD_USER_PROD }}" >> $GITHUB_ENV
+          echo "CLOUD_PORT=${{ secrets.CLOUD_PORT_PROD }}" >> $GITHUB_ENV
+          echo "CLOUD_DEPLOY_PATH=${{ secrets.CLOUD_DEPLOY_PATH_PROD }}" >> $GITHUB_ENV
+          echo "CLOUD_APP_PORT=${{ secrets.CLOUD_APP_PORT_PROD }}" >> $GITHUB_ENV
+        else
+          echo "CLOUD_HOST=${{ secrets.CLOUD_HOST_TEST }}" >> $GITHUB_ENV
+          echo "CLOUD_USER=${{ secrets.CLOUD_USER_TEST }}" >> $GITHUB_ENV
+          echo "CLOUD_PORT=${{ secrets.CLOUD_PORT_TEST }}" >> $GITHUB_ENV
+          echo "CLOUD_DEPLOY_PATH=${{ secrets.CLOUD_DEPLOY_PATH_TEST }}" >> $GITHUB_ENV
+          echo "CLOUD_APP_PORT=${{ secrets.CLOUD_APP_PORT_TEST }}" >> $GITHUB_ENV
+        fi
+
+    # 步骤 12: 设置 SSH 密钥
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        echo "${{ secrets.CLOUD_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -p ${{ env.CLOUD_PORT }} ${{ env.CLOUD_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+    # 步骤 13: 部署到云服务器
+    - name: Deploy to Cloud Server
+      run: |
+        ENV=${{ env.ENVIRONMENT }} bash deploy/deploy-cloud.sh
+      env:
+        # 将工作流中的环境变量传递给脚本
+        CLOUD_HOST: ${{ env.CLOUD_HOST }}
+        CLOUD_USER: ${{ env.CLOUD_USER }}
+        CLOUD_PORT: ${{ env.CLOUD_PORT }}
+        CLOUD_DEPLOY_PATH: ${{ env.CLOUD_DEPLOY_PATH }}
+        CLOUD_APP_PORT: ${{ env.CLOUD_APP_PORT }}
+        # 前端运行需要的环境变量
+        NEXT_PUBLIC_BASE_URL: ${{ env.NEXT_PUBLIC_BASE_URL }}
+        NEXT_PUBLIC_API_BASE_URL: ${{ env.NEXT_PUBLIC_API_BASE_URL }}
+        NEXT_PUBLIC_API_BASE_URL_PORT: ${{ env.NEXT_PUBLIC_API_BASE_URL_PORT }}
+
+    # 步骤 16: 设置通知变量（用于飞书通知）
+    - name: Set Notification Variables
+      if: always()                             # 无论成功失败都执行
+      run: |
+        # 获取当前时间（北京时间）
+        echo "TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+        
+        # 提取分支名称
+        if [ -n "$TARGET_REF" ]; then
+          BRANCH_NAME="${TARGET_REF##*/}"      # 从 refs/heads/branch 中提取 branch
+        else
+          BRANCH_NAME="${GITHUB_REF##*/}"      # 备用方案
+        fi
+        echo "BRANCH=${BRANCH_NAME}" >> $GITHUB_ENV
+        echo "TRIGGERED=${GITHUB_EVENT_NAME}" >> $GITHUB_ENV
+        
+        # 根据工作流状态设置通知样式
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "STATUS=Success" >> $GITHUB_ENV
+          echo "COLOR=green" >> $GITHUB_ENV    # 绿色卡片
+          echo "EMOJI=✅" >> $GITHUB_ENV
+        elif [ "${{ job.status }}" == "cancelled" ]; then
+          echo "STATUS=Cancelled" >> $GITHUB_ENV
+          echo "COLOR=grey" >> $GITHUB_ENV    # 灰色卡片
+          echo "EMOJI=⚪" >> $GITHUB_ENV
+        else
+          echo "STATUS=Failed" >> $GITHUB_ENV
+          echo "COLOR=red" >> $GITHUB_ENV     # 红色卡片
+          echo "EMOJI=❌" >> $GITHUB_ENV
+        fi
+        
+        # 确定触发来源
+        if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+          echo "TRIGGERED_BY=External trigger" >> $GITHUB_ENV
+        elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "TRIGGERED_BY=Manual" >> $GITHUB_ENV
+        elif [[ "${{ github.event_name }}" == "push" ]]; then
+          BRANCH_NAME="${GITHUB_REF##*/}"
+          echo "TRIGGERED_BY=Push to ${BRANCH_NAME}" >> $GITHUB_ENV
+        else
+          echo "TRIGGERED_BY=${{ github.event_name }}" >> $GITHUB_ENV
+        fi
+        
+        # 获取提交信息（仅 push 事件）
+        if [[ "${{ github.event_name }}" == "push" ]]; then
+          AUTHOR=$(git log -1 --pretty=format:'%an')      # 提交作者
+          MESSAGE=$(git log -1 --pretty=format:'%s')       # 提交信息
+          echo "COMMIT_MSG=${MESSAGE}" >> $GITHUB_ENV
+          echo "COMMIT_AUTHOR=${AUTHOR}" >> $GITHUB_ENV
+        else
+          echo "COMMIT_AUTHOR=N/A" >> $GITHUB_ENV
+          echo "COMMIT_MSG=N/A" >> $GITHUB_ENV
+        fi
+        
+        # 计算总耗时
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        MINUTES=$((DURATION / 60))
+        SECONDS=$((DURATION % 60))
+        echo "DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
+
+        # 步骤 17: 发送飞书通知
+    - name: Send Lark Notification (Card)
+      if: always()                             # 无论成功失败都发送通知
+      env:
+        LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK_URL }}  # 飞书 Webhook 地址（从 Secrets 读取）
+      run: |
+        # 构建飞书卡片消息的 JSON 负载
+        JSON_PAYLOAD=$(cat <<EOF
+        {
+          "msg_type": "interactive",
+          "card": {
+            "schema": "2.0",
+            "header": {
+              "title": {
+                "tag": "plain_text",
+                "content": "Hotel-Frontend-PC Deploy Notification"
+              },
+              "template": "${COLOR}",
+              "padding": "12px 12px 12px 12px"
+            },
+            "body": {
+              "direction": "vertical",
+              "padding": "12px 12px 12px 12px",
+              "elements": [
+                { "tag": "markdown", "content": "**Environment:** ${ENVIRONMENT}" },
+                { "tag": "markdown", "content": "**Status:** ${EMOJI} ${STATUS}" },
+                { "tag": "markdown", "content": "**Time:** ${TIME} (BeiJing)" },
+                { "tag": "markdown", "content": "**Duration:** ${DURATION}" },
+                { "tag": "markdown", "content": "**Branch:** ${BRANCH}" },
+                { "tag": "markdown", "content": "**Triggered by:** ${TRIGGERED_BY}" },
+                { "tag": "markdown", "content": "**Author:** ${COMMIT_AUTHOR}" },
+                { "tag": "markdown", "content": "**Message:** ${COMMIT_MSG}" },
+                { "tag": "markdown", "content": "[View Workflow →](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" }
+              ]
+            }
+          }
+        }
+        EOF
+        )
+        # 发送 POST 请求到飞书 Webhook
+        curl -X POST "$LARK_WEBHOOK" \
+          -H "Content-Type: application/json" \
+          -d "$JSON_PAYLOAD"
