@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createHotel } from "@/services/hotel";
+import { createHotel, getHotelFacilities } from "@/services/hotel";
 import type { CreateHotelBody, ContactItem, ImageItem, RoomItem } from "@/types/hotel";
 
 const HOTEL_TYPES = [
-  { value: "guesthouse", label: "民宿" },
-  { value: "hotel", label: "酒店" },
-  { value: "apartment", label: "公寓" },
+  { value: "domestic", label: "国内" },
+  { value: "overseas", label: "海外" },
+  { value: "hourly", label: "钟点房" },
+  { value: "guesthouse", label: "民宿" }
 ];
 
 const STAR_OPTIONS = [1, 2, 3, 4, 5];
@@ -39,7 +40,7 @@ export default function NewHotelPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
-  const [hotelType, setHotelType] = useState("guesthouse");
+  const [hotelType, setHotelType] = useState("domestic");
   const [star, setStar] = useState(3);
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
@@ -49,11 +50,26 @@ export default function NewHotelPage() {
   const [openingDate, setOpeningDate] = useState("");
   const [contacts, setContacts] = useState<ContactItem[]>([{ ...defaultContact }]);
   const [facilities, setFacilities] = useState<number[]>([]);
+  const [facilityOptions, setFacilityOptions] = useState<{ id: number, name: string }[]>([]);
   const [images, setImages] = useState<ImageItem[]>([
     { url: "", type: "cover" },
     { url: "", type: "detail" },
   ]);
   const [rooms, setRooms] = useState<RoomItem[]>([{ ...defaultRoom }]);
+
+
+  useEffect(() => {
+    const fetchFacilities = async () => {
+      try {
+        const res = await getHotelFacilities();
+        setFacilityOptions(res.data);
+      } catch (error) {
+        console.error("Failed to fetch facilities:", error);
+      }
+    }
+
+    fetchFacilities();
+  }, []);
 
   const setContact = (i: number, patch: Partial<ContactItem>) => {
     setContacts((prev) => {
@@ -241,28 +257,9 @@ export default function NewHotelPage() {
                 className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
               />
             </div>
-            <div>
-              <label className="mb-1 block text-sm text-zinc-600">纬度</label>
-              <input
-                type="number"
-                step="any"
-                value={latitude || ""}
-                onChange={(e) => setLatitude(Number(e.target.value) || 0)}
-                className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm text-zinc-600">经度</label>
-              <input
-                type="number"
-                step="any"
-                value={longitude || ""}
-                onChange={(e) => setLongitude(Number(e.target.value) || 0)}
-                className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
-              />
-            </div>
+           
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm text-zinc-600">简介</label>
+              <label className="mb-1 block text-sm text-zinc-600">酒店简介</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -329,18 +326,19 @@ export default function NewHotelPage() {
         </section>
 
         <section>
-          <h3 className="mb-3 text-sm font-medium text-zinc-700">设施（勾选 ID，示例 1–10）</h3>
+          <h3 className="mb-3 text-sm font-medium text-zinc-700">设施（勾选）</h3>
           <div className="flex flex-wrap gap-2">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((id) => (
-              <label key={id} className="flex items-center gap-1 rounded border border-zinc-200 px-3 py-1.5">
-                <input
-                  type="checkbox"
-                  checked={facilities.includes(id)}
-                  onChange={() => toggleFacility(id)}
-                />
-                <span className="text-sm">设施 {id}</span>
-              </label>
-            ))}
+            {facilityOptions.map((item) => (
+              <label 
+                key={item.id}
+                className="flex items-center gap-1 rounded border border-zinc-200 px-3 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={facilities.includes(item.id)}
+                    onChange={() => toggleFacility(item.id)}></input>
+                  <span className="text-sm">{item.name}</span>
+                </label>
+              ))}
           </div>
         </section>
 

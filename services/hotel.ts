@@ -41,3 +41,10 @@ export function submitHotelEdit(id: number, body: HotelEditBody) {
 export function getHotelEditLatest(id: number) {
   return request<HotelEditLatest>(`/api/merchant/hotel/${id}/edit/latest`);
 }
+
+/** 获取酒店便利设施 */
+export function getHotelFacilities() {
+  return request<{ id: number; name: string }[]>("/api/facilities", {
+    method: "GET",
+  });
+}
