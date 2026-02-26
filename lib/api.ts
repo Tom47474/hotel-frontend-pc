@@ -1,5 +1,4 @@
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://140.143.171.145:4090";
+export const API_BASE = "http://140.143.171.145:4090";
 
 type ApiResp<T> = {
   code: number;
