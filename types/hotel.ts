@@ -14,6 +14,7 @@ export interface ImageItem {
 
 /** 房型（新增酒店时与 rooms 一起提交） */
 export interface RoomItem {
+  room_id?: number;
   name: string;
   area: number;
   bed_type: string;
@@ -44,6 +45,7 @@ export interface CreateHotelBody {
 /** 提交酒店信息修改请求体（仅传要改的字段） */
 export interface HotelEditBody {
   name?: string;
+  hotel_type?: string;
   star?: number;
   city?: string;
   address?: string;
@@ -54,6 +56,17 @@ export interface HotelEditBody {
   contacts?: ContactItem[];
   facilities?: number[];
   images?: ImageItem[];
+  rooms?: Array<{
+    room_id?: number;
+    name?: string;
+    area?: number;
+    bed_type?: string;
+    max_guest?: number;
+    base_price?: number;
+    stock?: number;
+    images?: ImageItem[];
+    tag_ids?: number[];
+  }>;
 }
 
 /** 商户酒店列表项 */
@@ -76,6 +89,7 @@ export interface MerchantHotelListData {
 export interface MerchantHotelDetail {
   hotel_id: number;
   name: string;
+  hotel_type: string;
   star: number;
   city: string;
   address: string;
@@ -87,6 +101,7 @@ export interface MerchantHotelDetail {
   contacts: ContactItem[];
   facilities: number[];
   images: ImageItem[];
+  rooms: RoomItem[];
 }
 
 /** 该酒店最近一条修改记录 */

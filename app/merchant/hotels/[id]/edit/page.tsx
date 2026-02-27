@@ -7,6 +7,10 @@ import {
   getMerchantHotel,
   getHotelEditLatest,
   submitHotelEdit,
+  getHotelFacilities,
+  getRoomLabels,
+  uploadHotelImages,
+  
 } from "@/services/hotel";
 import type {
   MerchantHotelDetail,
@@ -14,9 +18,28 @@ import type {
   HotelEditBody,
   ContactItem,
   ImageItem,
+  RoomItem,
 } from "@/types/hotel";
+import { ImageUploader } from "@/components/common/ImageUploder";
 
 const STAR_OPTIONS = [1, 2, 3, 4, 5];
+const HOTEL_TYPES = [
+  { value: "domestic", label: "国内" },
+  { value: "overseas", label: "海外" },
+  { value: "hourly", label: "钟点房" },
+  { value: "guesthouse", label: "民宿" }
+];
+
+const defaultRoom: RoomItem = {
+  name: "",
+  area: 0,
+  bed_type: "",
+  max_guest: 0,
+  base_price: 0,
+  stock: 0,
+  images: [{ url: "", type: "cover" }],
+  tag_ids: [],
+};
 
 export default function EditHotelPage() {
   const router = useRouter();
@@ -29,6 +52,7 @@ export default function EditHotelPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
+  const [hotelType, setHotelType] = useState("domestic");
   const [star, setStar] = useState(3);
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
@@ -39,6 +63,17 @@ export default function EditHotelPage() {
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [facilities, setFacilities] = useState<number[]>([]);
   const [images, setImages] = useState<ImageItem[]>([]);
+  const [facilityOptions, setFacilityOptions] = useState<{ id: number; name: string }[]>([]);
+  const [roomLabelOptions, setRoomLabelOptions] = useState<{ id: number; name: string }[]>([]);
+  const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
+  const [rooms, setRooms] = useState<RoomItem[]>([{ ...defaultRoom }]);
+  const [roomImageFiles, setRoomImageFiles] = useState<File[][]>([[]]);
+
+  // 加载设施和房型标签
+  useEffect(() => {
+    getHotelFacilities().then((res) => setFacilityOptions(res.data)).catch(console.error);
+    getRoomLabels().then((data) => setRoomLabelOptions(data)).catch(console.error);
+  }, []);
 
   const loadData = useCallback(() => {
     if (!id || Number.isNaN(id)) {
@@ -53,6 +88,7 @@ export default function EditHotelPage() {
         const d = detailRes.data;
         setDetail(d);
         setName(d.name ?? "");
+        setHotelType(d.hotel_type ?? "");
         setStar(d.star ?? 3);
         setCity(d.city ?? "");
         setAddress(d.address ?? "");
@@ -63,6 +99,10 @@ export default function EditHotelPage() {
         setContacts(d.contacts?.length ? [...d.contacts] : [{ type: "phone", value: "", is_primary: true }]);
         setFacilities(d.facilities ?? []);
         setImages(d.images?.length ? [...d.images] : [{ url: "", type: "cover" }]);
+        if (d.rooms?.length) {
+          setRooms(d.rooms);
+          setRoomImageFiles(d.rooms.map(() => []))
+        }
         return getHotelEditLatest(id)
           .then((latestRes) => latestRes.data)
           .catch(() => null);
@@ -95,22 +135,26 @@ export default function EditHotelPage() {
     setContacts((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  const setImage = (i: number, patch: Partial<ImageItem>) => {
-    setImages((prev) => {
+
+  const setRoom = (i: number, patch: Partial<RoomItem>) => {
+    setRooms((prev) => {
       const next = [...prev];
       next[i] = { ...next[i], ...patch };
       return next;
     });
   };
 
-  const addImage = () => {
-    setImages((prev) => [...prev, { url: "", type: "detail" }]);
+  const addRoom = () => {
+    setRooms((prev) => [...prev, { ...defaultRoom }]);
+    setRoomImageFiles((prev) => [...prev, []]);
   };
 
-  const removeImage = (i: number) => {
-    if (images.length <= 1) return;
-    setImages((prev) => prev.filter((_, idx) => idx !== i));
+  const removeRoom = (i: number) => {
+    if (rooms.length <= 1) return;
+    setRooms((prev) => prev.filter((_, idx) => idx !== i));
+    setRoomImageFiles((prev) => prev.filter((_, idx) => idx !== i));
   };
+
 
   const toggleFacility = (fid: number) => {
     setFacilities((prev) =>
@@ -141,9 +185,43 @@ export default function EditHotelPage() {
     if (Number(longitude) !== (detail.longitude ?? 0)) body.longitude = Number(longitude);
     if (description.trim() !== (detail.description ?? "")) body.description = description.trim();
     if (openingDate.trim() !== (detail.opening_date ?? "")) body.opening_date = openingDate.trim();
+    if (hotelType !== (detail.hotel_type ?? "domestic")) body.hotel_type = hotelType;
     body.contacts = contacts.filter((c) => c.value.trim());
     body.facilities = facilities;
-    body.images = images.filter((img) => img.url.trim());
+    if (newImageFiles.length > 0) {
+      const urls = await uploadHotelImages(newImageFiles);
+      const newItems = urls.map((url) => ({ url, type: "detail" as const }));
+      const merged = [...images.filter((img) => img.url.trim()), ...newItems];
+      if (merged.length > 0) merged[0].type = "cover";
+      body.images = merged;
+    } else {
+      body.images = images.filter((img) => img.url.trim());
+    }
+    body.rooms = await Promise.all(
+      rooms.map(async (r, i) => {
+        let roomImages: ImageItem[] = r.images?.filter((img) => img.url.trim()) ?? [];
+        if (roomImageFiles[i]?.length > 0) {
+          const urls = await uploadHotelImages(roomImageFiles[i]);
+          const newRoomImages = urls.map((url, idx) => ({
+            url,
+            type: idx === 0 ? "cover" : "detail" as "cover" | "detail",
+          }));
+          roomImages = [...roomImages, ...newRoomImages];
+          if (roomImages.length > 0) roomImages[0].type = "cover";
+        }
+        return {
+          room_id: r.room_id,
+          name: r.name,
+          area: Number(r.area) || 0,
+          bed_type: r.bed_type,
+          max_guest: Number(r.max_guest) || 1,
+          base_price: Number(r.base_price) || 0,
+          stock: Number(r.stock) || 0,
+          images: roomImages,
+          tag_ids: r.tag_ids ?? [],
+        };
+      })
+    );
 
     if (Object.keys(body).length === 0) {
       setError("未修改任何内容");
@@ -151,6 +229,7 @@ export default function EditHotelPage() {
       return;
     }
 
+    // console.log('body--->', body);
     try {
       await submitHotelEdit(id, body);
       router.push("/merchant/hotels");
@@ -239,6 +318,20 @@ export default function EditHotelPage() {
               />
             </div>
             <div>
+              <label className="mb-1 block text-sm text-zinc-600">类型</label>
+              <select
+                value={hotelType}
+                onChange={(e) => setHotelType(e.target.value)}
+                className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
+              >
+                {HOTEL_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="mb-1 block text-sm text-zinc-600">星级</label>
               <select
                 value={star}
@@ -267,26 +360,6 @@ export default function EditHotelPage() {
                 type="text"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm text-zinc-600">纬度</label>
-              <input
-                type="number"
-                step="any"
-                value={latitude || ""}
-                onChange={(e) => setLatitude(Number(e.target.value) || 0)}
-                className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm text-zinc-600">经度</label>
-              <input
-                type="number"
-                step="any"
-                value={longitude || ""}
-                onChange={(e) => setLongitude(Number(e.target.value) || 0)}
                 className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
               />
             </div>
@@ -358,19 +431,16 @@ export default function EditHotelPage() {
         </section>
 
         <section>
-          <h3 className="mb-3 text-sm font-medium text-zinc-700">设施（勾选 ID）</h3>
+          <h3 className="mb-3 text-sm font-medium text-zinc-700">设施（勾选）</h3>
           <div className="flex flex-wrap gap-2">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((fid) => (
-              <label
-                key={fid}
-                className="flex items-center gap-1 rounded border border-zinc-200 px-3 py-1.5"
-              >
+            {facilityOptions.map((item) => (
+              <label key={item.id} className="flex items-center gap-1 rounded border border-zinc-200 px-3 py-1.5">
                 <input
                   type="checkbox"
-                  checked={facilities.includes(fid)}
-                  onChange={() => toggleFacility(fid)}
+                  checked={facilities.includes(item.id) ?? false}
+                  onChange={() => toggleFacility(item.id)}
                 />
-                <span className="text-sm">设施 {fid}</span>
+                <span>{item.name}</span>
               </label>
             ))}
           </div>
@@ -378,37 +448,83 @@ export default function EditHotelPage() {
 
         <section>
           <h3 className="mb-3 text-sm font-medium text-zinc-700">图片</h3>
-          <div className="space-y-2">
-            {images.map((img, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <select
-                  value={img.type}
-                  onChange={(e) => setImage(i, { type: e.target.value as "cover" | "detail" })}
-                  className="rounded border border-zinc-300 px-2 py-1.5 text-sm"
-                >
-                  <option value="cover">封面</option>
-                  <option value="detail">详情</option>
-                </select>
-                <input
-                  type="url"
-                  value={img.url}
-                  onChange={(e) => setImage(i, { url: e.target.value })}
-                  placeholder="图片 URL"
-                  className="min-w-[200px] flex-1 rounded border border-zinc-300 px-3 py-1.5 text-sm"
-                />
-                {images.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeImage(i)}
-                    className="text-sm text-red-600 hover:underline"
-                  >
-                    删除
-                  </button>
-                )}
+          <ImageUploader
+            defaultImages={images}
+            onChange={(files, existingUrls) => {
+              setNewImageFiles(files);
+              setImages(existingUrls.map((url, idx) => ({
+                url,
+                type: idx === 0 ? "cover" : "detail",
+              })));
+            }}
+          />
+        </section>
+
+        <section>
+          <h3 className="mb-3 text-sm font-medium text-zinc-700">房型</h3>
+          <div className="space-y-4">
+            {rooms.map((room, i) => (
+              <div key={i} className="rounded border border-zinc-200 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="font-medium text-zinc-700">房型 {i + 1}</span>
+                  {rooms.length > 1 && (
+                    <button type="button" onClick={() => removeRoom(i)} className="text-sm text-red-600 hover:underline">
+                      删除房型
+                    </button>
+                  )}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <input type="text" value={room.name} onChange={(e) => setRoom(i, { name: e.target.value })} placeholder="房型名称 *" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
+                  <input type="number" min="1" value={room.area || ""} onChange={(e) => setRoom(i, { area: Number(e.target.value) || 0 })} placeholder="面积（㎡）" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
+                  <input type="text" value={room.bed_type} onChange={(e) => setRoom(i, { bed_type: e.target.value })} placeholder="床型" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
+                  <input type="number" min="1" value={room.max_guest || ""} onChange={(e) => setRoom(i, { max_guest: Number(e.target.value) || 0 })} placeholder="最多入住人数" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
+                  <input type="number" min="1" value={room.base_price || ""} onChange={(e) => setRoom(i, { base_price: Number(e.target.value) || 0 })} placeholder="基础价格" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
+                  <input type="number" min="1" value={room.stock || ""} onChange={(e) => setRoom(i, { stock: Number(e.target.value) || 0 })} placeholder="库存" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
+                </div>
+                <div className="mt-3">
+                  <p className="mb-1 text-xs text-zinc-500">房型标签</p>
+                  <div className="flex flex-wrap gap-2">
+                    {roomLabelOptions.map((item) => (
+                      <label key={item.id} className="flex items-center gap-1 rounded border border-zinc-200 px-3 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={room.tag_ids?.includes(item.id) ?? false}
+                          onChange={() => {
+                            const current = room.tag_ids ?? [];
+                            const next = current.includes(item.id)
+                              ? current.filter((id) => id !== item.id)
+                              : [...current, item.id];
+                            setRoom(i, { tag_ids: next });
+                          }}
+                        />
+                        <span className="text-sm">{item.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="mb-1 text-xs text-zinc-500">房型图片（第一张为主图，其余为细节图）</p>
+                  <ImageUploader
+                    defaultImages={room.images}
+                    onChange={(files, existingUrls) => {
+                      setRoomImageFiles((prev) => {
+                        const next = [...prev];
+                        next[i] = files;
+                        return next;
+                      });
+                      setRoom(i, {
+                        images: existingUrls.map((url, idx) => ({
+                          url,
+                          type: idx === 0 ? "cover" : "detail" as "cover" | "detail",
+                        })),
+                      });
+                    }}
+                  />
+                </div>
               </div>
             ))}
-            <button type="button" onClick={addImage} className="text-sm text-zinc-600 hover:underline">
-              + 添加图片
+            <button type="button" onClick={addRoom} className="text-sm text-zinc-600 hover:underline">
+              + 添加房型
             </button>
           </div>
         </section>
