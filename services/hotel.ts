@@ -48,3 +48,30 @@ export function getHotelFacilities() {
     method: "GET",
   });
 }
+
+/** 上传图片 */
+export async function uploadHotelImages(files: File[]): Promise<string[]> {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+
+  const res = await request<{ urls: string[] }>("/api/merchant/hotel/images/upload", {
+    method: "POST",
+    formData: form,
+  });
+
+  return res.data.urls;
+}
+
+/** 根据地址获取经纬度 */
+export async function getGeoFromAddress(city: string, address: string): Promise<{ lng: number; lat: number }> {
+  const res = await request<{ lng: number; lat: number }>(
+    `/api/getGeoLocation?city=${encodeURIComponent(city)}&address=${encodeURIComponent(address)}`
+  );
+  return res.data;
+}
+
+/** 获取房型的标签（海景、城景） */
+export async function getRoomLabels(): Promise<{ id: number; name: string }[]> {
+  const res = await request<{ id: number; name: string }[]>("/api/roomLabels");
+  return res.data;
+}

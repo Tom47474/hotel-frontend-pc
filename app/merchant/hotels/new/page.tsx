@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createHotel, getHotelFacilities } from "@/services/hotel";
+import { createHotel, getGeoFromAddress, getHotelFacilities, getRoomLabels, uploadHotelImages } from "@/services/hotel";
 import type { CreateHotelBody, ContactItem, ImageItem, RoomItem } from "@/types/hotel";
+import { ImageUploader } from "@/components/common/ImageUploder";
 
 const HOTEL_TYPES = [
   { value: "domestic", label: "国内" },
@@ -21,13 +22,13 @@ const defaultContact: ContactItem = {
   is_primary: true,
 };
 
-const defaultImage: ImageItem = { url: "", type: "cover" };
+
 
 const defaultRoom: RoomItem = {
   name: "",
   area: 0,
   bed_type: "",
-  max_guest: 1,
+  max_guest: 0,
   base_price: 0,
   stock: 0,
   images: [{ url: "", type: "cover" }],
@@ -51,13 +52,28 @@ export default function NewHotelPage() {
   const [contacts, setContacts] = useState<ContactItem[]>([{ ...defaultContact }]);
   const [facilities, setFacilities] = useState<number[]>([]);
   const [facilityOptions, setFacilityOptions] = useState<{ id: number, name: string }[]>([]);
-  const [images, setImages] = useState<ImageItem[]>([
-    { url: "", type: "cover" },
-    { url: "", type: "detail" },
-  ]);
   const [rooms, setRooms] = useState<RoomItem[]>([{ ...defaultRoom }]);
+  const [roomImageFiles, setRoomImageFiles] = useState<File[][]>([[]]);
 
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
+  const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
+
+  const [roomLabelOptions, setRoomLabelOptions] = useState<{ id: number; name: string }[]>([]);
+
+  useEffect(() => {
+    const fetchRoomLabels = async () => {
+      try {
+        const data = await getRoomLabels();
+        setRoomLabelOptions(data);
+      }catch(error){
+        console.error("Failed to fetch room labels:", error);
+      }
+    };
+    fetchRoomLabels();
+  }, []);
+  
   useEffect(() => {
     const fetchFacilities = async () => {
       try {
@@ -88,22 +104,7 @@ export default function NewHotelPage() {
     setContacts((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  const setImage = (i: number, patch: Partial<ImageItem>) => {
-    setImages((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], ...patch };
-      return next;
-    });
-  };
 
-  const addImage = () => {
-    setImages((prev) => [...prev, { url: "", type: "detail" }]);
-  };
-
-  const removeImage = (i: number) => {
-    if (images.length <= 1) return;
-    setImages((prev) => prev.filter((_, idx) => idx !== i));
-  };
 
   const setRoom = (i: number, patch: Partial<RoomItem>) => {
     setRooms((prev) => {
@@ -115,11 +116,13 @@ export default function NewHotelPage() {
 
   const addRoom = () => {
     setRooms((prev) => [...prev, { ...defaultRoom }]);
+    setRoomImageFiles((prev) => [...prev, []]);
   };
 
   const removeRoom = (i: number) => {
     if (rooms.length <= 1) return;
     setRooms((prev) => prev.filter((_, idx) => idx !== i));
+    setRoomImageFiles((prev) => prev.filter((_, idx) => idx !== i));
   };
 
   const toggleFacility = (id: number) => {
@@ -133,29 +136,55 @@ export default function NewHotelPage() {
     setError(null);
     setSubmitting(true);
 
+    // 根据地址获取经纬度信息
+    const { lng, lat } = await getGeoFromAddress(city.trim(), address.trim());
+    
+    let imageItems: ImageItem[] = [];
+
+    if (newImageFiles.length > 0) {
+      const imageUrls = await uploadHotelImages(newImageFiles);
+
+      imageItems = imageUrls.map((url, index) => ({
+        url,
+        type: index === 0 ? "cover" : "detail",
+      }));
+    }
+
     const payload: CreateHotelBody = {
       name: name.trim(),
       hotel_type: hotelType,
       star,
       city: city.trim(),
       address: address.trim(),
-      latitude: Number(latitude) || 0,
-      longitude: Number(longitude) || 0,
+      latitude: Number(lat) || 0,
+      longitude: Number(lng) || 0,
       description: description.trim(),
       opening_date: openingDate.trim(),
       contacts: contacts.filter((c) => c.value.trim()),
       facilities,
-      images: images.filter((img) => img.url.trim()),
-      rooms: rooms.map((r) => ({
-        name: r.name,
-        area: Number(r.area) || 0,
-        bed_type: r.bed_type,
-        max_guest: Number(r.max_guest) || 1,
-        base_price: Number(r.base_price) || 0,
-        stock: Number(r.stock) || 0,
-        images: r.images?.filter((i) => i?.url) ?? [],
-        tag_ids: r.tag_ids ?? [],
-      })),
+      images: imageItems,
+      rooms: await Promise.all(
+        rooms.map(async (r, i) => {
+          let roomImages: ImageItem[] = [];
+          if (roomImageFiles[i]?.length > 0) {
+            const urls = await uploadHotelImages(roomImageFiles[i]);
+            roomImages = urls.map((url, idx) => ({
+              url,
+              type: idx === 0 ? "cover" : "detail",
+            }));
+          }
+          return {
+            name: r.name,
+            area: Number(r.area) || 0,
+            bed_type: r.bed_type,
+            max_guest: Number(r.max_guest) || 1,
+            base_price: Number(r.base_price) || 0,
+            stock: Number(r.stock) || 0,
+            images: roomImages,
+            tag_ids: r.tag_ids ?? [],
+          }
+        })
+      )
     };
 
     if (!payload.name || !payload.address || !payload.contacts.length) {
@@ -170,6 +199,8 @@ export default function NewHotelPage() {
       return;
     }
 
+    // console.log("payload--->", payload);
+
     try {
       const res = await createHotel(payload);
       router.push(`/merchant/hotels`);
@@ -179,6 +210,30 @@ export default function NewHotelPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /** 浏览器获取定位，获取经纬度 */
+  const handleGetLocation = () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGeoError("当前浏览器不支持定位");
+      return;
+    }
+  
+    setGeoLoading(true);
+    setGeoError(null);
+  
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude: lat, longitude: lng } = position.coords;
+        setLatitude(lat);
+        setLongitude(lng);
+        setGeoLoading(false);
+      },
+      (err) => {
+        setGeoError(err.message || "获取定位失败");
+        setGeoLoading(false);
+      }
+    );
   };
 
   return (
@@ -274,7 +329,7 @@ export default function NewHotelPage() {
                 value={openingDate}
                 onChange={(e) => setOpeningDate(e.target.value)}
                 className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900"
-                placeholder="如：2024 或 2024-01-01"
+                placeholder="如：2024-01-01"
               />
             </div>
           </div>
@@ -344,35 +399,9 @@ export default function NewHotelPage() {
 
         <section>
           <h3 className="mb-3 text-sm font-medium text-zinc-700">图片</h3>
-          <div className="space-y-2">
-            {images.map((img, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <select
-                  value={img.type}
-                  onChange={(e) => setImage(i, { type: e.target.value as "cover" | "detail" })}
-                  className="rounded border border-zinc-300 px-2 py-1.5 text-sm"
-                >
-                  <option value="cover">封面</option>
-                  <option value="detail">详情</option>
-                </select>
-                <input
-                  type="url"
-                  value={img.url}
-                  onChange={(e) => setImage(i, { url: e.target.value })}
-                  placeholder="图片 URL"
-                  className="flex-1 min-w-[200px] rounded border border-zinc-300 px-3 py-1.5 text-sm"
-                />
-                {images.length > 1 && (
-                  <button type="button" onClick={() => removeImage(i)} className="text-sm text-red-600 hover:underline">
-                    删除
-                  </button>
-                )}
-              </div>
-            ))}
-            <button type="button" onClick={addImage} className="text-sm text-zinc-600 hover:underline">
-              + 添加图片
-            </button>
-          </div>
+          <ImageUploader
+            onChange={(files) => setNewImageFiles(files)}
+          />
         </section>
 
         <section>
@@ -402,6 +431,7 @@ export default function NewHotelPage() {
                   />
                   <input
                     type="number"
+                    min="1"
                     value={room.area || ""}
                     onChange={(e) => setRoom(i, { area: Number(e.target.value) || 0 })}
                     placeholder="面积（㎡）"
@@ -416,13 +446,15 @@ export default function NewHotelPage() {
                   />
                   <input
                     type="number"
+                    min="1"
                     value={room.max_guest || ""}
-                    onChange={(e) => setRoom(i, { max_guest: Number(e.target.value) || 1 })}
+                    onChange={(e) => setRoom(i, { max_guest: Number(e.target.value) || 0 })}
                     placeholder="最多入住人数"
                     className="rounded border border-zinc-300 px-3 py-1.5 text-sm"
                   />
                   <input
                     type="number"
+                    min="1"
                     value={room.base_price || ""}
                     onChange={(e) => setRoom(i, { base_price: Number(e.target.value) || 0 })}
                     placeholder="基础价格"
@@ -430,10 +462,49 @@ export default function NewHotelPage() {
                   />
                   <input
                     type="number"
+                    min="1"
                     value={room.stock || ""}
                     onChange={(e) => setRoom(i, { stock: Number(e.target.value) || 0 })}
                     placeholder="库存"
                     className="rounded border border-zinc-300 px-3 py-1.5 text-sm"
+                  />
+                </div>
+                <div className="mt-3">
+                  <p className="mb-1 text-xs text-zinc-500">房型标签</p>
+                  <div className="flex flex-wrap gap-2">
+                    {roomLabelOptions.map((item) => (
+                      <label
+                        key={item.id}
+                        className="flex items-center gap-1 rounded border border-zinc-200 px-3 py-1.5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={room.tag_ids?.includes(item.id) ?? false}
+                          onChange={() => {
+                            const current = room.tag_ids ?? [];
+                            const next = current.includes(item.id)
+                              ? current.filter((id) => id !== item.id)
+                              : [...current, item.id];
+                            setRoom(i, { tag_ids: next });
+                          }}
+                        />
+                        <span className="text-sm">{item.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="mb-1 text-xs text-zinc-500">
+                    房型图片（第一张为主图，其余为细节图）
+                  </p>
+                  <ImageUploader
+                    onChange={(files) =>
+                      setRoomImageFiles((prev) => {
+                        const next = [...prev];
+                        next[i] = files;
+                        return next;
+                      })
+                    }
                   />
                 </div>
               </div>
