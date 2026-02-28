@@ -108,6 +108,7 @@ export interface MerchantHotelDetail {
 export interface HotelEditLatest {
   hotel_edit_id: number;
   hotel_id: number;
+  hotel_type: string | null;
   edit_status: "pending" | "rejected" | "approved";
   reject_reason: string | null;
   reviewed_at: string | null;
@@ -123,4 +124,15 @@ export interface HotelEditLatest {
   contacts_edit: ContactItem[] | null;
   facilities_edit: number[] | null;
   images_edit: ImageItem[] | null;
+  rooms_edit: Array<{
+    room_id?: number;
+    name?: string;
+    area?: number;
+    bed_type?: string;
+    max_guest?: number;
+    base_price?: number;
+    stock?: number;
+    images?: ImageItem[];
+    tag_ids?: number[];
+  }> | null;
 }

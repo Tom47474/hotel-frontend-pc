@@ -10,7 +10,7 @@ import {
   getHotelFacilities,
   getRoomLabels,
   uploadHotelImages,
-  
+
 } from "@/services/hotel";
 import type {
   MerchantHotelDetail,
@@ -68,6 +68,7 @@ export default function EditHotelPage() {
   const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
   const [rooms, setRooms] = useState<RoomItem[]>([{ ...defaultRoom }]);
   const [roomImageFiles, setRoomImageFiles] = useState<File[][]>([[]]);
+  const [showPendingDetail, setShowPendingDetail] = useState(false);
 
   // 加载设施和房型标签
   useEffect(() => {
@@ -88,7 +89,7 @@ export default function EditHotelPage() {
         const d = detailRes.data;
         setDetail(d);
         setName(d.name ?? "");
-        setHotelType(d.hotel_type ?? "");
+        setHotelType(d.hotel_type ?? "domestic");
         setStar(d.star ?? 3);
         setCity(d.city ?? "");
         setAddress(d.address ?? "");
@@ -176,61 +177,60 @@ export default function EditHotelPage() {
     setError(null);
     setSubmitting(true);
 
-    const body: HotelEditBody = {};
-    if (name.trim() !== (detail.name ?? "")) body.name = name.trim();
-    if (star !== (detail.star ?? 3)) body.star = star;
-    if (city.trim() !== (detail.city ?? "")) body.city = city.trim();
-    if (address.trim() !== (detail.address ?? "")) body.address = address.trim();
-    if (Number(latitude) !== (detail.latitude ?? 0)) body.latitude = Number(latitude);
-    if (Number(longitude) !== (detail.longitude ?? 0)) body.longitude = Number(longitude);
-    if (description.trim() !== (detail.description ?? "")) body.description = description.trim();
-    if (openingDate.trim() !== (detail.opening_date ?? "")) body.opening_date = openingDate.trim();
-    if (hotelType !== (detail.hotel_type ?? "domestic")) body.hotel_type = hotelType;
-    body.contacts = contacts.filter((c) => c.value.trim());
-    body.facilities = facilities;
-    if (newImageFiles.length > 0) {
-      const urls = await uploadHotelImages(newImageFiles);
-      const newItems = urls.map((url) => ({ url, type: "detail" as const }));
-      const merged = [...images.filter((img) => img.url.trim()), ...newItems];
-      if (merged.length > 0) merged[0].type = "cover";
-      body.images = merged;
-    } else {
-      body.images = images.filter((img) => img.url.trim());
-    }
-    body.rooms = await Promise.all(
-      rooms.map(async (r, i) => {
-        let roomImages: ImageItem[] = r.images?.filter((img) => img.url.trim()) ?? [];
-        if (roomImageFiles[i]?.length > 0) {
-          const urls = await uploadHotelImages(roomImageFiles[i]);
-          const newRoomImages = urls.map((url, idx) => ({
-            url,
-            type: idx === 0 ? "cover" : "detail" as "cover" | "detail",
-          }));
-          roomImages = [...roomImages, ...newRoomImages];
-          if (roomImages.length > 0) roomImages[0].type = "cover";
-        }
-        return {
-          room_id: r.room_id,
-          name: r.name,
-          area: Number(r.area) || 0,
-          bed_type: r.bed_type,
-          max_guest: Number(r.max_guest) || 1,
-          base_price: Number(r.base_price) || 0,
-          stock: Number(r.stock) || 0,
-          images: roomImages,
-          tag_ids: r.tag_ids ?? [],
-        };
-      })
-    );
-
-    if (Object.keys(body).length === 0) {
-      setError("未修改任何内容");
-      setSubmitting(false);
-      return;
-    }
-
-    // console.log('body--->', body);
     try {
+      // 1. 酒店图片
+      let hotelImages: ImageItem[] = images.filter((img) => img.url.trim());
+      if (newImageFiles.length > 0) {
+        const urls = await uploadHotelImages(newImageFiles);
+        const newItems = urls.map((url) => ({ url, type: "detail" as const }));
+        hotelImages = [...hotelImages, ...newItems];
+      }
+      if (hotelImages.length > 0) hotelImages[0].type = "cover";
+
+      // 2. 房型（含图片上传）
+      const roomsPayload = await Promise.all(
+        rooms.map(async (r, i) => {
+          let roomImages: ImageItem[] = r.images?.filter((img) => img.url.trim()) ?? [];
+          if (roomImageFiles[i]?.length > 0) {
+            const urls = await uploadHotelImages(roomImageFiles[i]);
+            const newRoomImages = urls.map((url, idx) => ({
+              url,
+              type: (idx === 0 ? "cover" : "detail") as "cover" | "detail",
+            }));
+            roomImages = [...roomImages, ...newRoomImages];
+          }
+          if (roomImages.length > 0) roomImages[0].type = "cover";
+          return {
+            room_id: r.room_id,
+            name: r.name,
+            area: Number(r.area) || 0,
+            bed_type: r.bed_type,
+            max_guest: Number(r.max_guest) || 1,
+            base_price: Number(r.base_price) || 0,
+            stock: Number(r.stock) || 0,
+            images: roomImages,
+            tag_ids: r.tag_ids ?? [],
+          };
+        })
+      );
+
+      // 3. 组装完整 body，不做 diff
+      const body: HotelEditBody = {
+        name: name.trim(),
+        hotel_type: hotelType,
+        star,
+        city: city.trim(),
+        address: address.trim(),
+        latitude: Number(latitude) || 0,
+        longitude: Number(longitude) || 0,
+        description: description.trim(),
+        opening_date: openingDate.trim(),
+        contacts: contacts.filter((c) => c.value.trim()),
+        facilities,
+        images: hotelImages,
+        rooms: roomsPayload,
+      };
+
       await submitHotelEdit(id, body);
       router.push("/merchant/hotels");
       router.refresh();
@@ -278,13 +278,135 @@ export default function EditHotelPage() {
 
       {detail?.status !== "approved" && (
         <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          仅已上线的酒店可提交修改，当前状态：{detail?.status ?? "—"}
+          仅已上线的酒店可提交修改，当前状态：{detail?.status === 'pending' ? '待审核' : '-'}
         </div>
       )}
 
       {isPending && (
-        <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
-          您有一条修改正在审核中，请等待审核结果后再提交新修改。
+        <div className="mb-4 rounded border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <div className="flex items-center justify-between">
+            <span>您有一条修改正在审核中，请等待审核结果后再提交新修改。</span>
+            <button
+              type="button"
+              onClick={() => setShowPendingDetail((v) => !v)}
+              className="ml-4 shrink-0 rounded border border-blue-300 px-3 py-1 text-xs text-blue-700 hover:bg-blue-100"
+            >
+              {showPendingDetail ? "收起" : "查看提交内容"}
+            </button>
+          </div>
+
+          {showPendingDetail && latestEdit && (
+            <div className="mt-3 space-y-4 border-t border-blue-200 pt-3 text-xs text-blue-700">
+
+              {/* 基本信息 */}
+              <div>
+                <p className="mb-2 font-semibold text-blue-800">基本信息</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  <p><span className="font-medium">酒店名称：</span>{latestEdit.name ?? "—"}</p>
+                  <p><span className="font-medium">类型：</span>
+                    {HOTEL_TYPES.find((t) => t.value === latestEdit.hotel_type)?.label ?? latestEdit.hotel_type ?? "—"}
+                  </p>
+                  <p><span className="font-medium">星级：</span>{latestEdit.star ? `${latestEdit.star} 星` : "—"}</p>
+                  <p><span className="font-medium">城市：</span>{latestEdit.city ?? "—"}</p>
+                  <p className="col-span-2"><span className="font-medium">地址：</span>{latestEdit.address ?? "—"}</p>
+                  <p className="col-span-2"><span className="font-medium">简介：</span>{latestEdit.description ?? "—"}</p>
+                  <p><span className="font-medium">开业日期：</span>{latestEdit.opening_date ?? "—"}</p>
+                </div>
+              </div>
+
+              {/* 联系方式 */}
+              <div>
+                <p className="mb-2 font-semibold text-blue-800">联系方式</p>
+                {latestEdit.contacts_edit && latestEdit.contacts_edit.length > 0 ? (
+                  <div className="space-y-1">
+                    {latestEdit.contacts_edit.map((c, i) => (
+                      <p key={i}>
+                        <span className="font-medium">{c.type === "phone" ? "电话" : "邮箱"}：</span>
+                        {c.value}
+                        {c.is_primary && <span className="ml-1 text-blue-400">（主联系方式）</span>}
+                      </p>
+                    ))}
+                  </div>
+                ) : <p className="text-blue-400">—</p>}
+              </div>
+
+              {/* 设施 */}
+              <div>
+                <p className="mb-2 font-semibold text-blue-800">设施</p>
+                {latestEdit.facilities_edit && latestEdit.facilities_edit.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {latestEdit.facilities_edit.map((fid) => (
+                      <span key={fid} className="rounded border border-blue-200 bg-blue-50 px-2 py-0.5">
+                        {facilityOptions.find((f) => f.id === fid)?.name ?? fid}
+                      </span>
+                    ))}
+                  </div>
+                ) : <p className="text-blue-400">—</p>}
+              </div>
+
+              {/* 酒店图片 */}
+              <div>
+                <p className="mb-2 font-semibold text-blue-800">酒店图片</p>
+                {latestEdit.images_edit && latestEdit.images_edit.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {latestEdit.images_edit.map((img, i) => (
+                      <div key={i} className="relative h-16 w-16 overflow-hidden rounded border border-blue-200">
+                        <img src={img.url} className="h-full w-full object-cover" />
+                        {i === 0 && (
+                          <span className="absolute left-0 top-0 bg-black/60 px-1 text-[9px] text-white">主图</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-blue-400">—</p>}
+              </div>
+
+              {/* 房型 */}
+              <div>
+                <p className="mb-2 font-semibold text-blue-800">房型</p>
+                {latestEdit.rooms_edit && latestEdit.rooms_edit.length > 0 ? (
+                  <div className="space-y-3">
+                    {latestEdit.rooms_edit.map((room, i) => (
+                      <div key={i} className="rounded border border-blue-200 bg-white/50 p-3">
+                        <p className="mb-2 font-medium text-blue-800">
+                          房型 {i + 1}{room.name ? `：${room.name}` : ""}
+                        </p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          <p><span className="font-medium">面积：</span>{room.area ? `${room.area} ㎡` : "—"}</p>
+                          <p><span className="font-medium">床型：</span>{room.bed_type || "—"}</p>
+                          <p><span className="font-medium">最多入住：</span>{room.max_guest ? `${room.max_guest} 人` : "—"}</p>
+                          <p><span className="font-medium">基础价格：</span>{room.base_price ? `¥${room.base_price}` : "—"}</p>
+                          <p><span className="font-medium">库存：</span>{room.stock ?? "—"}</p>
+                          <p className="col-span-2">
+                            <span className="font-medium">标签：</span>
+                            {room.tag_ids && room.tag_ids.length > 0
+                              ? room.tag_ids.map((tid) => roomLabelOptions.find((t) => t.id === tid)?.name ?? tid).join("、")
+                              : "—"}
+                          </p>
+                        </div>
+                        {room.images && room.images.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {room.images.map((img, j) => (
+                              <div key={j} className="relative h-14 w-14 overflow-hidden rounded border border-blue-200">
+                                <img src={img.url} className="h-full w-full object-cover" />
+                                {j === 0 && (
+                                  <span className="absolute left-0 top-0 bg-black/60 px-1 text-[9px] text-white">主图</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-blue-400">—</p>}
+              </div>
+
+              <p className="border-t border-blue-200 pt-2 text-blue-400">
+                提交时间：{latestEdit.created_at}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
