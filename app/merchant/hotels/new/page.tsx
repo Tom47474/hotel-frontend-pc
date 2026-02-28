@@ -462,8 +462,8 @@ export default function NewHotelPage() {
                   />
                   <input
                     type="number"
-                    min="1"
-                    value={room.stock || ""}
+                    min="0"
+                    value={room.stock ?? ""}
                     onChange={(e) => setRoom(i, { stock: Number(e.target.value) || 0 })}
                     placeholder="库存"
                     className="rounded border border-zinc-300 px-3 py-1.5 text-sm"

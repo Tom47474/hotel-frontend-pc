@@ -15,8 +15,8 @@ export default function MerchantHotelsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    // setLoading(true);
+    // setError(null);
     getMerchantHotels({ page: 1, size: 50 })
       .then((res) => {
         if (cancelled) return;
