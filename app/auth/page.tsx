@@ -33,7 +33,7 @@ export default function AuthPage() {
   function gotoByRole(role: Role) {
     // 这里改成项目真实路由
     if (role === "admin") router.replace("/admin");
-    else router.replace("/merchant");
+    else router.replace("/merchant/hotels");
   }
 
   async function onLoginSubmit(e: React.FormEvent) {
