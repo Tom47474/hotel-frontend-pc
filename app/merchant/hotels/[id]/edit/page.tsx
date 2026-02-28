@@ -601,7 +601,7 @@ export default function EditHotelPage() {
                   <input type="text" value={room.bed_type} onChange={(e) => setRoom(i, { bed_type: e.target.value })} placeholder="床型" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
                   <input type="number" min="1" value={room.max_guest || ""} onChange={(e) => setRoom(i, { max_guest: Number(e.target.value) || 0 })} placeholder="最多入住人数" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
                   <input type="number" min="1" value={room.base_price || ""} onChange={(e) => setRoom(i, { base_price: Number(e.target.value) || 0 })} placeholder="基础价格" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
-                  <input type="number" min="1" value={room.stock || ""} onChange={(e) => setRoom(i, { stock: Number(e.target.value) || 0 })} placeholder="库存" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
+                  <input type="number" min="0" value={room.stock ?? ""} onChange={(e) => setRoom(i, { stock: Number(e.target.value) || 0 })} placeholder="库存" className="rounded border border-zinc-300 px-3 py-1.5 text-sm" />
                 </div>
                 <div className="mt-3">
                   <p className="mb-1 text-xs text-zinc-500">房型标签</p>
