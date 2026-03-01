@@ -21,10 +21,17 @@ export function getMerchantHotel(id: number) {
 }
 
 /** 商户酒店列表 */
-export function getMerchantHotels(params?: { page?: number; size?: number }) {
+export function getMerchantHotels(params?: {
+  page?: number;
+  size?: number;
+  keyword?: string;
+  status?: string;
+}) {
   const search = new URLSearchParams();
   if (params?.page != null) search.set("page", String(params.page));
   if (params?.size != null) search.set("size", String(params.size));
+  if (params?.keyword) search.set("keyword", params.keyword);
+  if (params?.status) search.set("status", params.status);
   const qs = search.toString();
   return request<MerchantHotelListData>(`/api/merchant/hotels${qs ? `?${qs}` : ""}`);
 }
