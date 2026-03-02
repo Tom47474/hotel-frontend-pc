@@ -1,6 +1,8 @@
 import type { ApiResponse } from "@/types/api";
 import { getApiBase } from "@/utils/api";
-import { MERCHANT_TOKEN } from "@/constants/auth";
+import { getToken } from "@/constants/auth";
+
+const FALLBACK_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJ0ZXN0X21lcmNoYW50Iiwicm9sZSI6Im1lcmNoYW50IiwiaWF0IjoxNzcyMjUxMjA1LCJleHAiOjE3NzI4NTYwMDV9.gp00jPDDs5i9vEAlFLK7dZgBVqfCL5-Pi15O6q3Y_zA";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -16,10 +18,11 @@ async function request<T>(
   const { method = "GET", body, headers: extra = {}, formData } = options;
   const base = getApiBase();
   const url = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  const token = getToken() || FALLBACK_TOKEN;
 
   const headers: Record<string, string> = {
     ...(formData ? {} : { "Content-Type": "application/json" }),
-    Authorization: `Bearer ${MERCHANT_TOKEN}`,
+    Authorization: `Bearer ${token}`,
     ...extra,
   };
 
