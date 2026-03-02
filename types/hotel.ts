@@ -104,6 +104,82 @@ export interface MerchantHotelDetail {
   rooms: RoomItem[];
 }
 
+/**
+ * 管理员端酒店列表项（审核页）
+ * status 含义：pending=审核中, approved=通过(未上线), rejected=不通过, online=已上线, offline=已下线
+ * 仅审核通过可上线，仅已上线可下线，已下线可恢复
+ */
+export interface AdminHotelListItem {
+  type?: string;
+  hotel_id: number;
+  hotel_edit_id?: number;
+  name: string;
+  merchant_id: number;
+  /** 审核/上线状态: pending | approved | rejected | online | offline */
+  status: string;
+  /** 审核不通过时的驳回原因 */
+  reject_reason?: string | null;
+  created_at: string;
+}
+
+/** 管理员端酒店列表分页返回 */
+export interface AdminHotelListData {
+  list: AdminHotelListItem[];
+  total?: number;
+  page?: number;
+  size?: number;
+}
+
+/** 管理员端酒店详情中的设施项（接口返回 { id, name }） */
+export interface AdminFacilityItem {
+  id: number;
+  name: string;
+}
+
+/** 管理员端酒店详情中的房型（接口含 images、tags 数组） */
+export interface AdminHotelRoomItem {
+  room_id?: number;
+  name: string;
+  area: number;
+  bed_type: string;
+  max_guest: number;
+  base_price: number;
+  stock: number;
+  images?: unknown[];
+  tags?: unknown[];
+}
+
+/** 管理员端酒店详情中的图片（接口含 sort） */
+export interface AdminHotelImageItem {
+  url: string;
+  type: string;
+  sort?: number;
+}
+
+/** 管理员端酒店详情（GET /api/admin/hotel/:id，与接口返回一致） */
+export interface AdminHotelDetail {
+  hotel_id: number;
+  name: string;
+  star?: number;
+  city?: string;
+  address?: string;
+  latitude?: string;
+  longitude?: string;
+  description?: string;
+  opening_date?: string;
+  status: string;
+  reject_reason?: string | null;
+  contacts?: Array<{
+    type: string;
+    value: string;
+    is_primary?: number | boolean;
+    remark?: string | null;
+  }>;
+  facilities?: AdminFacilityItem[];
+  images?: AdminHotelImageItem[];
+  rooms?: AdminHotelRoomItem[];
+}
+
 /** 该酒店最近一条修改记录 */
 export interface HotelEditLatest {
   hotel_edit_id: number;

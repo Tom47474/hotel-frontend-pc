@@ -255,19 +255,7 @@ export default function AdminHotelsPage() {
                     const rowKey = `hotel-${item.hotel_id}-${item.hotel_edit_id ?? index}-${index}`;
 
                     return (
-                      <tr
-                        key={rowKey}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => router.push(`/admin/hotel/${item.hotel_id}`)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            router.push(`/admin/hotel/${item.hotel_id}`);
-                          }
-                        }}
-                        className="cursor-pointer hover:bg-zinc-100 transition-colors"
-                      >
+                      <tr key={rowKey} className="hover:bg-zinc-50">
                         <td className="px-4 py-3 text-zinc-900">{item.hotel_id}</td>
                         <td className="px-4 py-3 font-medium text-zinc-900">{item.name}</td>
                         <td className="px-4 py-3 text-zinc-600">{item.merchant_id}</td>
@@ -305,17 +293,14 @@ export default function AdminHotelsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-zinc-500">{formatDateTime(item.created_at)}</td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
                             {isPending && (
                               <>
                                 <button
                                   type="button"
                                   disabled={isActioning}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleApprove(item.hotel_id);
-                                  }}
+                                  onClick={() => handleApprove(item.hotel_id)}
                                   className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-60"
                                 >
                                   {isActioning ? "处理中…" : "通过"}
@@ -323,10 +308,7 @@ export default function AdminHotelsPage() {
                                 <button
                                   type="button"
                                   disabled={isActioning}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openRejectModal(item.hotel_id, item.name);
-                                  }}
+                                  onClick={() => openRejectModal(item.hotel_id, item.name)}
                                   className="rounded bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-60"
                                 >
                                   不通过
@@ -337,10 +319,7 @@ export default function AdminHotelsPage() {
                               <button
                                 type="button"
                                 disabled={isActioning}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOnline(item.hotel_id);
-                                }}
+                                onClick={() => handleOnline(item.hotel_id)}
                                 className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
                               >
                                 {isActioning ? "处理中…" : "上线"}
@@ -350,10 +329,7 @@ export default function AdminHotelsPage() {
                               <button
                                 type="button"
                                 disabled={isActioning}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOffline(item.hotel_id);
-                                }}
+                                onClick={() => handleOffline(item.hotel_id)}
                                 className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-700 disabled:opacity-60"
                               >
                                 {isActioning ? "处理中…" : "下线"}
@@ -363,10 +339,7 @@ export default function AdminHotelsPage() {
                               <button
                                 type="button"
                                 disabled={isActioning}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRestore(item.hotel_id);
-                                }}
+                                onClick={() => handleRestore(item.hotel_id)}
                                 className="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-60"
                               >
                                 {isActioning ? "处理中…" : "恢复"}
