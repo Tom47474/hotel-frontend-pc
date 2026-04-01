@@ -1,3 +1,4 @@
+import compressImage from "@/lib/compressImage";
 import { request } from "@/services/request";
 import type {
   CreateHotelBody,
@@ -56,10 +57,18 @@ export function getHotelFacilities() {
   });
 }
 
-/** 上传图片 */
+/** 上传图片（已压缩 + WebP） */
 export async function uploadHotelImages(files: File[]): Promise<string[]> {
   const form = new FormData();
-  files.forEach((file) => form.append("files", file));
+
+  // 循环 → 压缩每一张图 → 拿到 WebP 文件 → 上传
+  for (const file of files) {
+    // 压缩图片（得到 webp 格式新文件）
+    const compressedResult = await compressImage(file);
+    
+    // ✅ 把压缩后的 WebP 加入表单，不是原图！
+    form.append("files", compressedResult.file);
+  }
 
   const res = await request<{ urls: string[] }>("/api/merchant/hotel/images/upload", {
     method: "POST",

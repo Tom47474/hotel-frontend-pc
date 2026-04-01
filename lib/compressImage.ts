@@ -1,6 +1,7 @@
 // 前端压缩函数（Client Component）
 interface CompressResult {
   blob: Blob;
+  file: File;
   originalSize: number;
   compressedSize: number;
   compressionRatio: string;
@@ -27,6 +28,10 @@ async function compressImage(file: File, quality: number = 0.8): Promise<Compres
     type: 'image/webp',
     quality: quality
   });
+  const fileName = file.name.replace(/\.\w+$/, '') + '.webp';
+  const compressedFile = new File([blob], fileName, {
+    type: 'image/webp',
+  });
 
   const compressedSize = blob.size;
   const compressedSizeKB = (compressedSize / 1024).toFixed(2);
@@ -45,6 +50,7 @@ async function compressImage(file: File, quality: number = 0.8): Promise<Compres
 
   return {
     blob,
+    file: compressedFile,
     originalSize,
     compressedSize,
     compressionRatio: `${compressionRatio}%`
