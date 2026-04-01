@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import compressImage from "@/lib/compressImage";
 
 type UploadImageItem = {
   file?: File;       // 新上传的文件，已有图片没有此字段
   preview: string;   // 预览地址
   url?: string;      // 已有图片的原始 URL
+  compressedBlob?: Blob; // 压缩后的 Blob
 };
 
 type ImageUploaderProps = {
@@ -26,7 +28,15 @@ export function ImageUploader({ defaultImages, onChange }: ImageUploaderProps) {
 
   const notify = useCallback(
     (items: UploadImageItem[]) => {
-      const files = items.filter((i) => i.file).map((i) => i.file!);
+      // 优先使用压缩后的 Blob，如果没有则使用原文件
+      const files = items.map((i) => {
+        if (i.compressedBlob) {
+          return new File([i.compressedBlob], i.file?.name || "image.webp", { 
+            type: i.compressedBlob.type 
+          });
+        }
+        return i.file!;
+      });
       const existingUrls = items.filter((i) => i.url && !i.file).map((i) => i.url!);
       onChange?.(files, existingUrls);
     },
@@ -34,11 +44,35 @@ export function ImageUploader({ defaultImages, onChange }: ImageUploaderProps) {
   );
 
   const handleFiles = useCallback(
-    (fileList: FileList | null) => {
+    async (fileList: FileList | null) => {
       if (!fileList) return;
-      const newItems: UploadImageItem[] = Array.from(fileList)
-        .filter((f) => f.type.startsWith("image/"))
-        .map((file) => ({ file, preview: URL.createObjectURL(file) }));
+      
+      const newItems: UploadImageItem[] = [];
+
+      for (const file of Array.from(fileList)) {
+        if (!file.type.startsWith("image/")) continue;
+
+        try {
+          // 压缩图片
+          const { blob, originalSize, compressedSize, compressionRatio } = await compressImage(file, 0.8);
+          
+          console.log(`✅ 压缩完成：${file.name}, 从 ${(originalSize/1024).toFixed(2)} KB 到 ${(compressedSize/1024).toFixed(2)} KB, 压缩了 ${compressionRatio}`);
+          
+          newItems.push({
+            file,
+            compressedBlob: blob,
+            preview: URL.createObjectURL(blob),
+          });
+        } catch (error) {
+          console.error(`❌ 压缩失败：${file.name}`, error);
+          // 如果压缩失败，使用原图
+          newItems.push({
+            file,
+            preview: URL.createObjectURL(file),
+          });
+        }
+      }
+
       if (!newItems.length) return;
       const next = [...images, ...newItems];
       setImages(next);
